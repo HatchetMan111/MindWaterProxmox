@@ -184,6 +184,8 @@ Häufige Fälle:
 - **Keine vztmpl-Storage** → `VZTMP_STORAGE=<name>` setzen (Storage mit Inhaltstyp *Container template*).
 - **`data_dir_not_writable`** (mindwtr-cloud crash-loopt) → Das Datenverzeichnis gehört nicht der Container-uid 1000. Der Installer übergibt `/opt/mindwtr/data` seit dieser Version automatisch; manuell fixen mit:
   `pct exec <CTID> -- chown -R 1000:1000 /opt/mindwtr/data`
+- **`mindwtr-app` bleibt im Status `Created`, Cloud `unhealthy`** → Der Healthcheck des Upstream-`compose.yaml` (main) fragt `/ready` ab, ältere `:latest`-Images kennen nur `/health`. Der Installer biegt den Healthcheck automatisch auf `/health` um; manuell prüfen mit:
+  `pct exec <CTID> -- grep -A1 healthcheck /opt/mindwtr/compose.yaml`
 - **Images ziehen nicht** (GHCR nicht erreichbar) → Proxy/Firewall des Netzes prüfen; danach `pct exec <CTID> -- mindwtr-ctl update`.
 - **PWA lädt, Sync schlägt fehl** → Self-Hosted-URL muss `http://<LXC-IP>:8787` sein (nicht Port 5173); Token mit `mindwtr-ctl token` abgleichen; CORS-Origin prüfen: `pct exec <CTID> -- cat /opt/mindwtr/.env`.
 - **PVE-Firewall auf der CT aktiv** → Regeln für TCP `5173` + `8787` anlegen (im Standard-LXC ist keine Firewall aktiv).

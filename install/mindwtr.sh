@@ -155,7 +155,7 @@ if [[ "$UPDATE_MODE" -eq 0 ]]; then
   msg_info "Debian-${PCT_OSVERSION}-Template wird gesucht"
   pveam update >/dev/null
   TEMPLATE="$(pveam available --section system \
-              | grep "debian-${PCT_OSVERSION}-standard" | awk '{print $NF}' | sort -r | head -n1)"
+              | grep "debian-${PCT_OSVERSION}-standard" | awk '{print $NF}' | sort -r | head -n1)" || true
   [[ -n "$TEMPLATE" ]] || msg_fatal "Kein debian-${PCT_OSVERSION}-standard-Template gefunden."
   if ! pveam list "$VZTMP_STORAGE" | grep -q "$TEMPLATE"; then
     pveam download "$VZTMP_STORAGE" "$TEMPLATE" >/dev/null

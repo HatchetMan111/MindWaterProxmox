@@ -41,7 +41,7 @@ compose() {
 }
 
 get_token() {
-  grep -E '^MINDWTR_TOKEN=' "$CRED_FILE" | cut -d= -f2-
+  grep -E '^MINDWTR_TOKEN=' "$CRED_FILE" 2>/dev/null | cut -d= -f2- || true
 }
 
 cmd_refresh_env() {

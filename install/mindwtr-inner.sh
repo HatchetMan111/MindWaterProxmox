@@ -106,6 +106,11 @@ info "Compose-Konfiguration aus dem offiziellen Mindwtr-Repo laden"
 mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 wget -qO compose.yaml "${UPSTREAM_RAW}/docker/compose.yaml"
+# Upstream-Drift: compose.yaml auf 'main' checkt /ready, die veröffentlichten
+# :latest-Images kennen aber nur /health. /health existiert in beiden Versionen
+# → Healthcheck auf /health umbiegen, sonst bleibt mindwtr-app wegen
+# depends_on(service_healthy) dauerhaft im Status 'Created' hängen.
+sed -i 's|http://localhost:8787/ready|http://localhost:8787/health|g' compose.yaml
 ok "compose.yaml geladen (Quelle: ${UPSTREAM_REPO})"
 
 # Datenverzeichnis: der Cloud-Container läuft als uid 1000 (bun) und bindet
@@ -181,15 +186,23 @@ for _ in $(seq 1 80); do
 done
 if [[ "$HTTP_OK_APP" -eq 0 || "$HTTP_OK_CLOUD" -eq 0 ]]; then
   echo "FEHLER: Services antworten nicht (App=${HTTP_OK_APP}, Cloud-Health=${HTTP_OK_CLOUD})." >&2
-  echo "--- Service-Status ---"; systemctl status "$SERVICE" --no-pager -l | tail -n 25 >&2
-  echo "--- Docker ---"; docker ps -a >&2
-  echo "--- Compose-Logs ---"; (cd "$APP_DIR" && docker compose -f compose.yaml --env-file .env logs --tail=50) >&2
+  # Diagnose-Ausgaben mit '|| true': systemctl status liefert bei inaktiven
+  # Services Exit 3 – unter pipefail darf das die Diagnose nicht abwürgen.
+  echo "--- Service-Status ---"
+  systemctl status "$SERVICE" --no-pager -l 2>&1 | tail -n 25 >&2 || true
+  echo "--- Docker ---"
+  docker ps -a >&2 || true
+  echo "--- Health-Status der Container ---"
+  docker inspect -f '{{.Name}}: state={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' \
+    mindwtr-cloud mindwtr-app 2>/dev/null >&2 || true
+  echo "--- Compose-Logs ---"
+  (cd "$APP_DIR" && docker compose -f compose.yaml --env-file .env logs --tail=50) >&2 || true
   exit 1
 fi
 ok "Web UI antwortet:  http://localhost:${APP_PORT}/  → HTTP 200"
 ok "Sync-Server health: http://localhost:${CLOUD_PORT}/health → HTTP 200"
 
-SVC_STATE="$(systemctl is-active ${SERVICE})"
+SVC_STATE="$(systemctl is-active ${SERVICE})" || true
 [[ "$SVC_STATE" == "active" ]] || { echo "FEHLER: Service ist '${SVC_STATE}' statt active." >&2; exit 1; }
 ok "systemd-Service: active (enabled, Restart=always)"
 
