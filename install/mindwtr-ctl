@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  mindwtr-ctl – Verwaltungshelfer für die Mindwtr-LXC-Installation
+#
+#  Aufruf:  mindwtr-ctl <Befehl> [Argumente]
+#
+#  Befehle:
+#    refresh-env [APP_PORT] [CLOUD_PORT]   .env neu schreiben (CORS-Origin an
+#                                            aktuelle Container-IP anpassen)
+#    status                                  Service- + Container-Status
+#    logs [N]                                Letzte N Compose-Logzeilen (Default 50)
+#    run                                     Stack manuell starten
+#    down                                    Stack manuell stoppen
+#    update                                  Images pullen + Stack neu starten
+#    token                                   Sync-Token anzeigen
+# ============================================================================
+set -euo pipefail
+
+APP_DIR="/opt/mindwtr"
+CRED_FILE="/root/mindwtr-credentials"
+SERVICE="mindwtr"
+CONF_FILE="/etc/mindwtr.env"
+
+# Installierte Ports laden (von mindwtr-inner.sh geschrieben), Defaults 5173/8787
+APP_PORT_DEFAULT="5173"
+CLOUD_PORT_DEFAULT="8787"
+if [[ -f "$CONF_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$CONF_FILE"
+fi
+APP_PORT="${APP_PORT:-$APP_PORT_DEFAULT}"
+CLOUD_PORT="${CLOUD_PORT:-$CLOUD_PORT_DEFAULT}"
+
+usage() {
+  sed -n '2,16p' "$0" | sed 's/^#  \{0,1\}//'
+  exit 1
+}
+
+compose() {
+  docker compose -f "${APP_DIR}/compose.yaml" --env-file "${APP_DIR}/.env" "$@"
+}
+
+get_token() {
+  grep -E '^MINDWTR_TOKEN=' "$CRED_FILE" | cut -d= -f2-
+}
+
+cmd_refresh_env() {
+  # Ports optional überschreiben, sonst aus /etc/mindwtr.env bzw. Defaults
+  local app_port="${1:-$APP_PORT}"
+  if [[ $# -ge 2 ]]; then
+    printf 'APP_PORT=%s\nCLOUD_PORT=%s\n' "$1" "$2" > "$CONF_FILE"
+  fi
+  local token
+  token="$(get_token)"
+  [[ -n "$token" ]] || { echo "Kein Token in ${CRED_FILE} gefunden." >&2; exit 1; }
+  local ct_ip
+  ct_ip="$(hostname -I | awk '{print $1}')"
+  cat > "${APP_DIR}/.env" <<EOF
+MINDWTR_CLOUD_AUTH_TOKENS=${token}
+MINDWTR_CLOUD_CORS_ORIGIN=http://${ct_ip}:${app_port}
+EOF
+  echo "CORS-Origin gesetzt auf http://${ct_ip}:${app_port}"
+}
+
+cmd_status() {
+  echo "── Service ──"
+  systemctl status "$SERVICE" --no-pager -l || true
+  echo "── Container ──"
+  docker ps -a --filter "name=mindwtr" || true
+  echo "── Health ──"
+  curl -fsS -o /dev/null -w "Web UI    : HTTP %{http_code}\n" "http://localhost:${APP_PORT}/" || echo "Web UI    : nicht erreichbar"
+  curl -fsS -o /dev/null -w "Cloud     : HTTP %{http_code}\n" "http://localhost:${CLOUD_PORT}/health" || echo "Cloud     : nicht erreichbar"
+}
+
+cmd_logs() { compose logs --tail="${1:-50}"; }
+cmd_run()  { compose up -d; }
+cmd_down() { compose down; }
+cmd_update() { compose pull && compose up -d; }
+cmd_token() { get_token; }
+
+[[ $# -ge 1 ]] || usage
+case "$1" in
+  refresh-env) shift; cmd_refresh_env "$@" ;;
+  status)      cmd_status ;;
+  logs)        shift; cmd_logs "${1:-50}" ;;
+  run)         cmd_run ;;
+  down)        cmd_down ;;
+  update)      cmd_update ;;
+  token)       cmd_token ;;
+  *)           usage ;;
+esac

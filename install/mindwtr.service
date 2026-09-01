@@ -1,0 +1,26 @@
+[Unit]
+Description=Mindwtr GTD Stack (Web UI + Sync Server) via Docker Compose
+Documentation=https://github.com/dongdongbh/Mindwtr
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mindwtr
+# Bei jedem Start: CORS-Origin/IP in .env aktualisieren (DHCP-sicher),
+# dann Images aktualisieren und Stack hochfahren.
+ExecStartPre=/usr/local/bin/mindwtr-ctl refresh-env
+ExecStartPre=-/usr/bin/docker compose -f /opt/mindwtr/compose.yaml --env-file /opt/mindwtr/.env pull
+# Attached 'up': bleibt im Vordergrund, solange der Stack läuft.
+# Container-Crashes übernimmt die Compose-Restart-Policy (restart: always);
+# fällt der Compose-Prozess selbst aus, greift Restart=always hier.
+ExecStart=/usr/bin/docker compose -f /opt/mindwtr/compose.yaml --env-file /opt/mindwtr/.env up
+ExecStop=/usr/bin/docker compose -f /opt/mindwtr/compose.yaml --env-file /opt/mindwtr/.env down
+Restart=always
+RestartSec=10
+TimeoutStartSec=900
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
