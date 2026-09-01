@@ -108,6 +108,14 @@ cd "$APP_DIR"
 wget -qO compose.yaml "${UPSTREAM_RAW}/docker/compose.yaml"
 ok "compose.yaml geladen (Quelle: ${UPSTREAM_REPO})"
 
+# Datenverzeichnis: der Cloud-Container läuft als uid 1000 (bun) und bindet
+# ./data → /app/cloud_data. Docker würde das Verzeichnis beim Start als root
+# anlegen → der Server bricht mit 'data_dir_not_writable' ab. Deshalb hier
+# explizit an uid 1000 übergeben (Anforderung aus dem Upstream-Docker-README).
+mkdir -p "$APP_DIR/data"
+chown -R 1000:1000 "$APP_DIR/data"
+ok "Datenverzeichnis $APP_DIR/data bereit (Besitzer uid 1000)"
+
 # ───────────────────── 4. Sync-Token + Umgebung erzeugen ────────────────────
 # CORS-Origin: bei DHCP kann sich die IP ändern → wird vom systemd-Service
 # bei jedem Start frisch in die .env geschrieben (siehe mindwtr-ctl refresh-env).
@@ -159,6 +167,16 @@ for _ in $(seq 1 80); do
   if [[ "$HTTP_OK_APP" -eq 0 ]] && curl -fsS -o /dev/null --max-time 3 "http://localhost:${APP_PORT}/"; then HTTP_OK_APP=1; fi
   if [[ "$HTTP_OK_CLOUD" -eq 0 ]] && curl -fsS -o /dev/null --max-time 3 "http://localhost:${CLOUD_PORT}/health"; then HTTP_OK_CLOUD=1; fi
   [[ "$HTTP_OK_APP" -eq 1 && "$HTTP_OK_CLOUD" -eq 1 ]] && break
+  # Fail-fast: Crashloop erkennen (z. B. Rechte-/Konfigurationsfehler), statt
+  # die volle Wartezeit zu verbrauchen – Logs sofort in die Fehlerkette.
+  if [[ "$HTTP_OK_CLOUD" -eq 0 ]]; then
+    RESTARTS="$(docker inspect -f '{{.RestartCount}}' mindwtr-cloud 2>/dev/null || echo 0)"
+    if [[ "${RESTARTS:-0}" -ge 5 ]]; then
+      echo "FEHLER: mindwtr-cloud startet wiederholt neu (RestartCount=${RESTARTS}) – siehe Container-Logs." >&2
+      docker logs mindwtr-cloud --tail 30 >&2 || true
+      exit 1
+    fi
+  fi
   sleep 3
 done
 if [[ "$HTTP_OK_APP" -eq 0 || "$HTTP_OK_CLOUD" -eq 0 ]]; then

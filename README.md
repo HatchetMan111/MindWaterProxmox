@@ -182,6 +182,8 @@ Häufige Fälle:
 
 - **`pct`/`pveam` nicht gefunden** → Script auf dem PVE-Host ausführen, nicht in einer VM/SSH-Sitzung eines Containers.
 - **Keine vztmpl-Storage** → `VZTMP_STORAGE=<name>` setzen (Storage mit Inhaltstyp *Container template*).
+- **`data_dir_not_writable`** (mindwtr-cloud crash-loopt) → Das Datenverzeichnis gehört nicht der Container-uid 1000. Der Installer übergibt `/opt/mindwtr/data` seit dieser Version automatisch; manuell fixen mit:
+  `pct exec <CTID> -- chown -R 1000:1000 /opt/mindwtr/data`
 - **Images ziehen nicht** (GHCR nicht erreichbar) → Proxy/Firewall des Netzes prüfen; danach `pct exec <CTID> -- mindwtr-ctl update`.
 - **PWA lädt, Sync schlägt fehl** → Self-Hosted-URL muss `http://<LXC-IP>:8787` sein (nicht Port 5173); Token mit `mindwtr-ctl token` abgleichen; CORS-Origin prüfen: `pct exec <CTID> -- cat /opt/mindwtr/.env`.
 - **PVE-Firewall auf der CT aktiv** → Regeln für TCP `5173` + `8787` anlegen (im Standard-LXC ist keine Firewall aktiv).
